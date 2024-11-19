@@ -41,21 +41,35 @@ inline bool isOperation(BYTE value, BYTE op_code) {
     return op_code == (value >> (7 - op_highest_bit));
 }
 
+inline std::string getRegNameByIdx(const int reg_idx, bool is_wide) {
+    return is_wide ? reg_long_table[reg_idx] : reg_short_table[reg_idx];
+}
+
 int decodeRegMemMov(const std::vector<BYTE> &vec, const int current_idx) {
     bool direction_to_reg = 0b00000010 & vec[current_idx];
     bool w = 0b00000001 & vec[current_idx];
-    int reg_id = ((vec[current_idx + 1]) & 0b00111000) >> 3;
-    int rm_id = ((vec[current_idx + 1]) & 0b00000111);
-    std::string reg = w ? reg_long_table[reg_id] : reg_short_table[reg_id];
-    std::string rm = w ? reg_long_table[rm_id] : reg_short_table[rm_id];
+    int reg_idx = ((vec[current_idx + 1]) & 0b00111000) >> 3;
+    int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
+    std::string reg = getRegNameByIdx(reg_idx, w);
+    std::string rm = getRegNameByIdx(rm_idx, w);
     std::cout << "mov "
-              << (direction_to_reg ? (reg + " " + rm) : (rm + " " + reg))
+              << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg))
               << std::endl;
     return 2;
 }
 
 int decodeImmediateToRegMov(const std::vector<BYTE> &vec, const int current_idx) {
-    return 1;
+    bool w = 0b00001000 & vec[current_idx];
+    int reg_idx = vec[current_idx] & 0b00000111;
+    std::string reg = getRegNameByIdx(reg_idx, w);
+    int value = vec[current_idx + 1];
+    if (w) {
+        value += static_cast<int>(vec[current_idx + 2]) << 8;
+    }
+    std::cout << "mov "
+              << reg << ", " << value
+              << std::endl;
+    return w ? 3 : 2;
 }
 
 int decodeMov(const std::vector<BYTE> &vec, const int current_idx)
