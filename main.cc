@@ -24,6 +24,7 @@ std::vector<BYTE> readFile(const char* filename)
 
 static const std::string reg_short_table[8] = {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH"};
 static const std::string reg_long_table[8] = {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"};
+static const std::string effective_address_calc_table[8] = {"BX + SI", "BX + DI", "BP + SI", "BP + DI", "SI", "DI", "BP", "BX"};
 
 static const BYTE reg_mem_mov_code = 0b100010;
 static const BYTE immediate_to_reg_mov_code = 0b1011;
@@ -45,17 +46,36 @@ inline std::string getRegNameByIdx(const int reg_idx, bool is_wide) {
     return is_wide ? reg_long_table[reg_idx] : reg_short_table[reg_idx];
 }
 
+enum class MovMode : int {
+    MemNoDisp = 0,
+    Mem8bDisp = 1,
+    Mem16bDisp = 2,
+    Reg = 3
+};
+
 int decodeRegMemMov(const std::vector<BYTE> &vec, const int current_idx) {
     bool direction_to_reg = 0b00000010 & vec[current_idx];
     bool w = 0b00000001 & vec[current_idx];
-    int reg_idx = ((vec[current_idx + 1]) & 0b00111000) >> 3;
-    int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
-    std::string reg = getRegNameByIdx(reg_idx, w);
-    std::string rm = getRegNameByIdx(rm_idx, w);
-    std::cout << "mov "
-              << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg))
-              << std::endl;
-    return 2;
+    MovMode mov_mode =  static_cast<MovMode>(vec[current_idx + 1] >> 6);
+    switch (mov_mode) {
+    case MovMode::MemNoDisp:
+        break;
+    case MovMode::Mem8bDisp:
+        break;
+    case MovMode::Mem16bDisp:
+        break;
+    case MovMode::Reg: {
+        int reg_idx = ((vec[current_idx + 1]) & 0b00111000) >> 3;
+        int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
+        std::string reg = getRegNameByIdx(reg_idx, w);
+        std::string rm = getRegNameByIdx(rm_idx, w);
+        std::cout << "mov "
+                  << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg))
+                  << std::endl;
+        return 2;
+    } 
+    default:;
+    }
 }
 
 int decodeImmediateToRegMov(const std::vector<BYTE> &vec, const int current_idx) {
