@@ -1,8 +1,9 @@
+#include <bitset>
+#include <fstream>
 #include <iostream>
 #include <ostream>
-#include <fstream>
+#include <string>
 #include <vector>
-#include <bitset>
 
 typedef unsigned char BYTE;
 
@@ -54,28 +55,37 @@ enum class MovMode : int {
 };
 
 int decodeRegMemMov(const std::vector<BYTE> &vec, const int current_idx) {
+    int result = 0;
     bool direction_to_reg = 0b00000010 & vec[current_idx];
     bool w = 0b00000001 & vec[current_idx];
+    int reg_idx = ((vec[current_idx + 1]) & 0b00111000) >> 3;
+    int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
+    std::string reg = getRegNameByIdx(reg_idx, w);
+    std::string rm;
     MovMode mov_mode =  static_cast<MovMode>(vec[current_idx + 1] >> 6);
     switch (mov_mode) {
     case MovMode::MemNoDisp:
+        rm = '[' + effective_address_calc_table[rm_idx] + ']';
+        result = 2;
         break;
     case MovMode::Mem8bDisp:
+        rm = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[current_idx + 2]) + ']';
+        result = 3;
         break;
     case MovMode::Mem16bDisp:
+        rm = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[current_idx + 2]) + (vec[current_idx + 3] << 8)) + ']';
+        result = 4;
         break;
     case MovMode::Reg: {
-        int reg_idx = ((vec[current_idx + 1]) & 0b00111000) >> 3;
-        int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
-        std::string reg = getRegNameByIdx(reg_idx, w);
-        std::string rm = getRegNameByIdx(rm_idx, w);
-        std::cout << "mov "
-                  << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg))
-                  << std::endl;
-        return 2;
+        rm = getRegNameByIdx(rm_idx, w);
+        result = 2;
     } 
     default:;
     }
+    std::cout << "mov "
+              << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg))
+              << std::endl;
+    return result;
 }
 
 int decodeImmediateToRegMov(const std::vector<BYTE> &vec, const int current_idx) {
@@ -104,6 +114,7 @@ int decodeMov(const std::vector<BYTE> &vec, const int current_idx)
 
 int main()
 {
+    std::cout << "bits 16" << std::endl;
     auto vec = readFile("listing_0039_more_movs");
 
     int current_idx = 0;
