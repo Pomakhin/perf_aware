@@ -47,14 +47,14 @@ inline std::string getRegNameByIdx(const int reg_idx, bool is_wide) {
     return is_wide ? reg_long_table[reg_idx] : reg_short_table[reg_idx];
 }
 
-enum class MovMode : int {
+enum class OpMode : int {
     MemNoDisp = 0,
     Mem8bDisp = 1,
     Mem16bDisp = 2,
     Reg = 3
 };
 
-int decodeRegMemMov(const std::vector<BYTE> &vec, const int current_idx) {
+int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, const std::string &op_name) {
     int result = 0;
     bool direction_to_reg = 0b00000010 & vec[current_idx];
     bool w = 0b00000001 & vec[current_idx];
@@ -62,33 +62,34 @@ int decodeRegMemMov(const std::vector<BYTE> &vec, const int current_idx) {
     int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
     std::string reg = getRegNameByIdx(reg_idx, w);
     std::string rm;
-    MovMode mov_mode =  static_cast<MovMode>(vec[current_idx + 1] >> 6);
+    OpMode mov_mode =  static_cast<OpMode>(vec[current_idx + 1] >> 6);
     switch (mov_mode) {
-    case MovMode::MemNoDisp:
+    case OpMode::MemNoDisp:
         rm = '[' + effective_address_calc_table[rm_idx] + ']';
         result = 2;
         break;
-    case MovMode::Mem8bDisp:
+    case OpMode::Mem8bDisp:
         rm = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[current_idx + 2]) + ']';
         result = 3;
         break;
-    case MovMode::Mem16bDisp:
+    case OpMode::Mem16bDisp:
         rm = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[current_idx + 2]) + (vec[current_idx + 3] << 8)) + ']';
         result = 4;
         break;
-    case MovMode::Reg: {
+    case OpMode::Reg: {
         rm = getRegNameByIdx(rm_idx, w);
         result = 2;
     } 
     default:;
     }
-    std::cout << "mov "
+    std::cout << op_name << ' '  
               << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg))
               << std::endl;
     return result;
 }
 
-int decodeImmediateToRegMov(const std::vector<BYTE> &vec, const int current_idx) {
+int decodeImmediateToRegMov(const std::vector<BYTE> &vec,
+                            const int current_idx) {
     bool w = 0b00001000 & vec[current_idx];
     int reg_idx = vec[current_idx] & 0b00000111;
     std::string reg = getRegNameByIdx(reg_idx, w);
@@ -96,30 +97,56 @@ int decodeImmediateToRegMov(const std::vector<BYTE> &vec, const int current_idx)
     if (w) {
         value += static_cast<int>(vec[current_idx + 2]) << 8;
     }
-    std::cout << "mov "
-              << reg << ", " << value
-              << std::endl;
+    std::cout << "mov " << reg << ", " << value << std::endl;
     return w ? 3 : 2;
 }
 
-int decodeMov(const std::vector<BYTE> &vec, const int current_idx)
-{
-    if (isOperation(vec[current_idx], reg_mem_mov_code)) {
-        return decodeRegMemMov(vec, current_idx);
-    } else if (isOperation(vec[current_idx], immediate_to_reg_mov_code)) {
-        return decodeImmediateToRegMov(vec, current_idx);
+std::string getCommonArithmeticOpNameByCode(BYTE code) {
+    switch (code) {
+    case 0b000:
+        return "add";
+    case 0b101:
+        return "sub";
+    case 0b111:
+        return "cmp";
+    default:
+        return "error";
     }
-    return 1;
+}
+
+int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_idx)
+{
+    if (((vec[current_idx] >> 2) & 0b110001) == 0) {
+        // reg/mem
+        BYTE arithmeticsOpCode = (vec[current_idx] & 0b00111000) >> 3;
+        return decodeRegMemOp(vec, current_idx, getCommonArithmeticOpNameByCode(arithmeticsOpCode));
+    }
+    else if ((vec[current_idx] >> 2) == 0b100000) {
+        // immediate from reg/mem
+        return 1;
+    }
+}
+
+int decodeOperation(const std::vector<BYTE> &vec, const int current_idx)
+{
+    int processed_bytes = 0;
+    processed_bytes = tryDecodeCommonArithmetic(vec, current_idx);
+    if (isOperation(vec[current_idx], reg_mem_mov_code)) {
+        processed_bytes = decodeRegMemOp(vec, current_idx, "mov");
+    } else if (isOperation(vec[current_idx], immediate_to_reg_mov_code)) {
+        processed_bytes = decodeImmediateToRegMov(vec, current_idx);
+    }
+    return processed_bytes;
 }
 
 int main()
 {
     std::cout << "bits 16" << std::endl;
-    auto vec = readFile("listing_0039_more_movs");
+    auto vec = readFile("listing_0041_add_sub_cmp_jnz");
 
     int current_idx = 0;
     while (current_idx < vec.size()) {
-        current_idx += decodeMov(vec, current_idx);
+        current_idx += decodeOperation(vec, current_idx);
     }
     return 0;
 }
