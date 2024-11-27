@@ -48,11 +48,24 @@ inline std::string getRegNameByIdx(const int reg_idx, bool is_wide) {
 }
 
 enum class OpMode : int {
-    MemNoDisp = 0,
-    Mem8bDisp = 1,
-    Mem16bDisp = 2,
-    Reg = 3
+    MemNoDisp = 0b00,
+    Mem8bDisp = 0b01,
+    Mem16bDisp = 0b10,
+    Reg = 0b11
 };
+
+std::string getCommonArithmeticOpNameByCode(BYTE code) {
+    switch (code) {
+    case 0b000:
+        return "add";
+    case 0b101:
+        return "sub";
+    case 0b111:
+        return "cmp";
+    default:
+        return "error";
+    }
+}
 
 int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, const std::string &op_name) {
     int result = 0;
@@ -62,8 +75,8 @@ int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, const st
     int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
     std::string reg = getRegNameByIdx(reg_idx, w);
     std::string rm;
-    OpMode mov_mode =  static_cast<OpMode>(vec[current_idx + 1] >> 6);
-    switch (mov_mode) {
+    OpMode mod =  static_cast<OpMode>(vec[current_idx + 1] >> 6);
+    switch (mod) {
     case OpMode::MemNoDisp:
         rm = '[' + effective_address_calc_table[rm_idx] + ']';
         result = 2;
@@ -88,6 +101,57 @@ int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, const st
     return result;
 }
 
+int decodeData(const std::vector<BYTE> &vec, const int current_idx, const bool is_word_data, int &result) {
+    int bytes_processed = 1;
+    result = static_cast<int>(vec[current_idx]);
+    if (is_word_data) {
+        result += (vec[current_idx + 3] << 8);
+        bytes_processed = 2;
+    }
+    return bytes_processed;
+}
+
+int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec, const int current_idx) {
+    int result = 0;
+    bool s = 0b00000010 & vec[current_idx];
+    bool w = 0b00000001 & vec[current_idx];
+    bool is_word_data = !s && w;
+    int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
+    std::string rm;
+    int data = 0;
+    BYTE arithmeticsOpCode = (vec[current_idx + 1] & 0b00111000) >> 3;
+    std::string op_name = getCommonArithmeticOpNameByCode(arithmeticsOpCode);
+    OpMode mod =  static_cast<OpMode>(vec[current_idx + 1] >> 6);
+    result = 2;
+    switch (mod) {
+    case OpMode::MemNoDisp:
+        rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + ']';
+        result += decodeData(vec, current_idx + 2, is_word_data, data);
+        std::cout << op_name << ' ' << rm << ", " << data << std::endl;
+        break;
+    case OpMode::Mem8bDisp:
+        rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[current_idx + 2]) + ']';
+        result += decodeData(vec, current_idx + 3, is_word_data, data);
+        std::cout << op_name << ' ' << rm << ", " << data << std::endl;
+        break;
+    case OpMode::Mem16bDisp:
+        rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[current_idx + 2]) + (vec[current_idx + 3] << 8)) + ']';
+        result += decodeData(vec, current_idx + 4, is_word_data, data);
+        std::cout << op_name << ' ' << rm << ", " << data << std::endl;
+        break;
+    case OpMode::Reg: {
+        rm = getRegNameByIdx(rm_idx, w);
+        result += decodeData(vec, current_idx + 2, is_word_data, data);
+        std::cout << op_name << ' ' << rm << ", " << data << std::endl;
+        break;
+    }
+    default:
+        result = 1;
+        break;
+    }
+    return result;
+}
+
 int decodeImmediateToRegMov(const std::vector<BYTE> &vec,
                             const int current_idx) {
     bool w = 0b00001000 & vec[current_idx];
@@ -101,19 +165,6 @@ int decodeImmediateToRegMov(const std::vector<BYTE> &vec,
     return w ? 3 : 2;
 }
 
-std::string getCommonArithmeticOpNameByCode(BYTE code) {
-    switch (code) {
-    case 0b000:
-        return "add";
-    case 0b101:
-        return "sub";
-    case 0b111:
-        return "cmp";
-    default:
-        return "error";
-    }
-}
-
 int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_idx)
 {
     if (((vec[current_idx] >> 2) & 0b110001) == 0) {
@@ -123,8 +174,9 @@ int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_id
     }
     else if ((vec[current_idx] >> 2) == 0b100000) {
         // immediate from reg/mem
-        return 1;
+        return decodeRegMemImmediateArithmetic(vec, current_idx);
     }
+    return 1;
 }
 
 int decodeOperation(const std::vector<BYTE> &vec, const int current_idx)
