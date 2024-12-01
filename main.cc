@@ -105,7 +105,7 @@ int decodeData(const std::vector<BYTE> &vec, const int current_idx, const bool i
     int bytes_processed = 1;
     result = static_cast<int>(vec[current_idx]);
     if (is_word_data) {
-        result += (vec[current_idx + 3] << 8);
+        result += (vec[current_idx + 1] << 8);
         bytes_processed = 2;
     }
     return bytes_processed;
@@ -125,18 +125,25 @@ int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec, const int curr
     result = 2;
     switch (mod) {
     case OpMode::MemNoDisp:
-        rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + ']';
-        result += decodeData(vec, current_idx + 2, is_word_data, data);
+        if (rm_idx == 0b110) {
+            int direct_address = 0;
+            result += decodeData(vec, current_idx + 2, w, direct_address);
+            rm = std::string(w ? "word " : "byte ") + '[' + std::to_string(direct_address) + ']';
+            result += decodeData(vec, current_idx + result, is_word_data, data);
+        } else {
+            rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + ']';
+            result += decodeData(vec, current_idx + 2, is_word_data, data);
+        }
         std::cout << op_name << ' ' << rm << ", " << data << std::endl;
         break;
     case OpMode::Mem8bDisp:
         rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[current_idx + 2]) + ']';
-        result += decodeData(vec, current_idx + 3, is_word_data, data);
+        result += 1 + decodeData(vec, current_idx + 3, is_word_data, data);
         std::cout << op_name << ' ' << rm << ", " << data << std::endl;
         break;
     case OpMode::Mem16bDisp:
         rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[current_idx + 2]) + (vec[current_idx + 3] << 8)) + ']';
-        result += decodeData(vec, current_idx + 4, is_word_data, data);
+        result += 2 + decodeData(vec, current_idx + 4, is_word_data, data);
         std::cout << op_name << ' ' << rm << ", " << data << std::endl;
         break;
     case OpMode::Reg: {
@@ -149,6 +156,17 @@ int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec, const int curr
         result = 1;
         break;
     }
+    return result;
+}
+
+int decodeImmediateToAccumArithmetic(const std::vector<BYTE> &vec, const int current_idx) {
+    int result = 1;
+    bool w = 0b00000001 & vec[current_idx];
+    BYTE arithmeticsOpCode = (vec[current_idx] & 0b00111000) >> 3;
+    std::string op_name = getCommonArithmeticOpNameByCode(arithmeticsOpCode);
+    int data = 0;
+    result += decodeData(vec, current_idx + 1, w, data);
+    std::cout << op_name << (w ? " AX, " : " AL, ") << data << std::endl;
     return result;
 }
 
@@ -167,7 +185,7 @@ int decodeImmediateToRegMov(const std::vector<BYTE> &vec,
 
 int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_idx)
 {
-    if (((vec[current_idx] >> 2) & 0b110001) == 0) {
+    if (((vec[current_idx] >> 2) & 0b110001) == 0b000000) {
         // reg/mem
         BYTE arithmeticsOpCode = (vec[current_idx] & 0b00111000) >> 3;
         return decodeRegMemOp(vec, current_idx, getCommonArithmeticOpNameByCode(arithmeticsOpCode));
@@ -175,6 +193,10 @@ int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_id
     else if ((vec[current_idx] >> 2) == 0b100000) {
         // immediate from reg/mem
         return decodeRegMemImmediateArithmetic(vec, current_idx);
+    }
+    else if (((vec[current_idx] >> 1) & 0b1100011) == 0b0000010) {
+        // immediate to accumulator
+        return decodeImmediateToAccumArithmetic(vec, current_idx);
     }
     return 1;
 }
