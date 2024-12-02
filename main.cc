@@ -67,6 +67,7 @@ std::string getCommonArithmeticOpNameByCode(BYTE code) {
     }
 }
 
+
 int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, const std::string &op_name) {
     int result = 0;
     bool direction_to_reg = 0b00000010 & vec[current_idx];
@@ -198,7 +199,18 @@ int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_id
         // immediate to accumulator
         return decodeImmediateToAccumArithmetic(vec, current_idx);
     }
-    return 1;
+    return 0;
+}
+
+int tryDecodeJump(const std::vector<BYTE> &vec, const int current_idx) {
+    switch (vec[current_idx]) {
+    case 0b01110101:
+        const char c = reinterpret_cast<const char&>(vec[current_idx + 1]);
+        std::cout << "jnz " + std::to_string((int)c) << std::endl;
+        return 2;
+        break;
+    }
+    return 0;
 }
 
 int decodeOperation(const std::vector<BYTE> &vec, const int current_idx)
@@ -209,6 +221,9 @@ int decodeOperation(const std::vector<BYTE> &vec, const int current_idx)
         processed_bytes = decodeRegMemOp(vec, current_idx, "mov");
     } else if (isOperation(vec[current_idx], immediate_to_reg_mov_code)) {
         processed_bytes = decodeImmediateToRegMov(vec, current_idx);
+    }
+    if (processed_bytes == 0) {
+        processed_bytes = tryDecodeJump(vec, current_idx);
     }
     return processed_bytes;
 }
