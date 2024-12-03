@@ -203,14 +203,49 @@ int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_id
 }
 
 int tryDecodeJump(const std::vector<BYTE> &vec, const int current_idx) {
+    std::string op_name;
     switch (vec[current_idx]) {
-    case 0b01110101:
-        const char c = reinterpret_cast<const char&>(vec[current_idx + 1]);
-        std::cout << "jnz " + std::to_string((int)c) << std::endl;
-        return 2;
+        case 0b01110101: 
+            op_name = "jnz";
         break;
+        case 0b01110100: 
+            op_name = "je";
+        break;
+        case 0b01111100: 
+            op_name = "jl";
+        break;
+        case 0b01111110: 
+            op_name = "jle";
+        break;
+        case 0b01110010: 
+            op_name = "jb";
+        break;
+        case 0b01110110: 
+            op_name = "jbe";
+        break;
+        case 0b01111010: 
+            op_name = "jp";
+        break;
+        case 0b01110000: 
+            op_name = "jo";
+        break;
+        case 0b01111000: 
+            op_name = "js";
+        break;
+        case 0b01111101: 
+            op_name = "jnl";
+        break;
+        case 0b01111111: 
+            op_name = "jg";
+        break;
+        case 0b01110011: 
+            op_name = "jnb";
+        break;
+        
     }
-    return 0;
+    const char c = reinterpret_cast<const char&>(vec[current_idx + 1]);
+    std::cout << op_name + ' ' + std::to_string(c) << std::endl;
+    return 2;
 }
 
 int decodeOperation(const std::vector<BYTE> &vec, const int current_idx)
