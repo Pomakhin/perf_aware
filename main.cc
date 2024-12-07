@@ -241,10 +241,33 @@ int tryDecodeJump(const std::vector<BYTE> &vec, const int current_idx) {
         case 0b01110011: 
             op_name = "jnb";
         break;
-        
+        case 0b01110111: 
+            op_name = "ja";
+        break;
+        case 0b01111011: 
+            op_name = "jnp";
+        break;
+        case 0b01110001: 
+            op_name = "jno";
+        break;
+        case 0b01111001: 
+            op_name = "jns";
+        break;
+        case 0b11100010: 
+            op_name = "loop";
+        break;
+        case 0b11100001: 
+            op_name = "loopz";
+        break;
+        case 0b11100000: 
+            op_name = "loopnz";
+        break;
+        case 0b11100011: 
+            op_name = "jcxz";
+        break;
     }
-    const char c = reinterpret_cast<const char&>(vec[current_idx + 1]);
-    std::cout << op_name + ' ' + std::to_string(c) << std::endl;
+    const char c = reinterpret_cast<const char&>(vec[current_idx + 1]) + 2;
+    std::cout << op_name << " $" << (c >= 0 ? "+" : "") << std::to_string(c) << std::endl;
     return 2;
 }
 
