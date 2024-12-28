@@ -2,10 +2,13 @@
 #include <fstream>
 #include <iostream>
 #include <ostream>
-#include <string>
 #include <vector>
+#include "Tables.cpp"
+#include "Simulator.cpp"
 
 typedef unsigned char BYTE;
+
+static Simulator simulator;
 
 std::vector<BYTE> readFile(const char* filename)
 {
@@ -22,10 +25,6 @@ std::vector<BYTE> readFile(const char* filename)
     file.read((char*) &fileData[0], fileSize);
     return fileData;
 }
-
-static const std::string reg_short_table[8] = {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH"};
-static const std::string reg_long_table[8] = {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"};
-static const std::string effective_address_calc_table[8] = {"BX + SI", "BX + DI", "BP + SI", "BP + DI", "SI", "DI", "BP", "BX"};
 
 static const BYTE reg_mem_mov_code = 0b100010;
 static const BYTE immediate_to_reg_mov_code = 0b1011;
@@ -54,21 +53,73 @@ enum class OpMode : int {
     Reg = 0b11
 };
 
-std::string getCommonArithmeticOpNameByCode(BYTE code) {
-    switch (code) {
-    case 0b000:
+enum class OpType : int {
+    Mov,
+    Add,
+    Sub,
+    Cmp,
+    Error
+};
+
+std::string GetOpName(OpType opType) {
+    switch (opType) {
+    case OpType::Mov:
+        return "mov";
+    case OpType::Add:
         return "add";
-    case 0b101:
+    case OpType::Sub:
         return "sub";
-    case 0b111:
+    case OpType::Cmp:
         return "cmp";
     default:
         return "error";
     }
 }
 
+OpType getCommonArithmeticOpTypeByCode(BYTE code) {
+    switch (code) {
+    case 0b000:
+        return OpType::Add;
+    case 0b101:
+        return OpType::Sub;
+    case 0b111:
+        return OpType::Cmp;
+    default:
+        return OpType::Error;
+    }
+}
 
-int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, const std::string &op_name) {
+void simulateRegToRegMov(int reg_idx_dest, int reg_idx_source) {
+    std::cout << getRegNameByIdx(reg_idx_dest, true) << std::hex << ":0x" << simulator.registers[reg_idx_dest] << "->" << "0x" << simulator.registers[reg_idx_source] << std::endl;
+    simulator.registers[reg_idx_dest] = simulator.registers[reg_idx_source];
+}
+
+void simulateRegMemOp(OpMode mod, bool direction_to_reg, int reg_idx, int rm_idx) {
+    switch (mod) {
+    case OpMode::MemNoDisp:
+        break;
+    case OpMode::Mem8bDisp:
+        break;
+    case OpMode::Mem16bDisp:
+        break;
+    case OpMode::Reg:
+        simulateRegToRegMov(direction_to_reg ? reg_idx : rm_idx, direction_to_reg ? rm_idx : reg_idx);
+        break;
+    default:;
+    }
+}
+
+
+void simulateImmediateMov(int reg_idx, bool is_wide, uint16_t value) {
+    if (!is_wide) {
+        std::cout << "unsupported mov to short reg" << std::endl;
+        return;
+    }
+    std::cout << getRegNameByIdx(reg_idx, is_wide) << std::hex << ":0x" << simulator.registers[reg_idx] << "->" << "0x" << value << std::endl;
+    simulator.registers[reg_idx] = value;
+}
+
+int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, OpType op_type) {
     int result = 0;
     bool direction_to_reg = 0b00000010 & vec[current_idx];
     bool w = 0b00000001 & vec[current_idx];
@@ -96,9 +147,9 @@ int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, const st
     } 
     default:;
     }
-    std::cout << op_name << ' '  
-              << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg))
-              << std::endl;
+    std::cout << GetOpName(op_type) << ' '  
+              << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg)) << "; ";
+    simulateRegMemOp(mod, direction_to_reg, reg_idx, rm_idx);
     return result;
 }
 
@@ -121,7 +172,7 @@ int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec, const int curr
     std::string rm;
     int data = 0;
     BYTE arithmeticsOpCode = (vec[current_idx + 1] & 0b00111000) >> 3;
-    std::string op_name = getCommonArithmeticOpNameByCode(arithmeticsOpCode);
+    std::string op_name = GetOpName(getCommonArithmeticOpTypeByCode(arithmeticsOpCode));
     OpMode mod =  static_cast<OpMode>(vec[current_idx + 1] >> 6);
     result = 2;
     switch (mod) {
@@ -164,23 +215,25 @@ int decodeImmediateToAccumArithmetic(const std::vector<BYTE> &vec, const int cur
     int result = 1;
     bool w = 0b00000001 & vec[current_idx];
     BYTE arithmeticsOpCode = (vec[current_idx] & 0b00111000) >> 3;
-    std::string op_name = getCommonArithmeticOpNameByCode(arithmeticsOpCode);
+    std::string op_name = GetOpName(getCommonArithmeticOpTypeByCode(arithmeticsOpCode));
     int data = 0;
     result += decodeData(vec, current_idx + 1, w, data);
     std::cout << op_name << (w ? " AX, " : " AL, ") << data << std::endl;
     return result;
 }
 
+
 int decodeImmediateToRegMov(const std::vector<BYTE> &vec,
                             const int current_idx) {
     bool w = 0b00001000 & vec[current_idx];
     int reg_idx = vec[current_idx] & 0b00000111;
     std::string reg = getRegNameByIdx(reg_idx, w);
-    int value = vec[current_idx + 1];
+    uint16_t value = vec[current_idx + 1];
     if (w) {
-        value += static_cast<int>(vec[current_idx + 2]) << 8;
+        value += static_cast<uint16_t>(vec[current_idx + 2]) << 8;
     }
-    std::cout << "mov " << reg << ", " << value << std::endl;
+    std::cout << "mov " << reg << ", " << value << "; ";
+    simulateImmediateMov(reg_idx, w, value);
     return w ? 3 : 2;
 }
 
@@ -189,7 +242,7 @@ int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_id
     if (((vec[current_idx] >> 2) & 0b110001) == 0b000000) {
         // reg/mem
         BYTE arithmeticsOpCode = (vec[current_idx] & 0b00111000) >> 3;
-        return decodeRegMemOp(vec, current_idx, getCommonArithmeticOpNameByCode(arithmeticsOpCode));
+        return decodeRegMemOp(vec, current_idx, getCommonArithmeticOpTypeByCode(arithmeticsOpCode));
     }
     else if ((vec[current_idx] >> 2) == 0b100000) {
         // immediate from reg/mem
@@ -276,7 +329,7 @@ int decodeOperation(const std::vector<BYTE> &vec, const int current_idx)
     int processed_bytes = 0;
     processed_bytes = tryDecodeCommonArithmetic(vec, current_idx);
     if (isOperation(vec[current_idx], reg_mem_mov_code)) {
-        processed_bytes = decodeRegMemOp(vec, current_idx, "mov");
+        processed_bytes = decodeRegMemOp(vec, current_idx, OpType::Mov);
     } else if (isOperation(vec[current_idx], immediate_to_reg_mov_code)) {
         processed_bytes = decodeImmediateToRegMov(vec, current_idx);
     }
@@ -286,14 +339,20 @@ int decodeOperation(const std::vector<BYTE> &vec, const int current_idx)
     return processed_bytes;
 }
 
-int main()
+int main(int argc, char** argv)
 {
-    std::cout << "bits 16" << std::endl;
-    auto vec = readFile("listing_0041_add_sub_cmp_jnz");
+    if (argc <= 1) {
+        std::cout << "Usage: perf_aware asm_file_path" << std::endl;
+    } else {
+        std::cout << "bits 16" << std::endl;
+        auto vec = readFile(argv[1]);
 
-    int current_idx = 0;
-    while (current_idx < vec.size()) {
-        current_idx += decodeOperation(vec, current_idx);
+        int current_idx = 0;
+        while (current_idx < vec.size()) {
+            current_idx += decodeOperation(vec, current_idx);
+        }
     }
+    std::cout << "Final registers:" << std::endl;
+    simulator.printRegisters();
     return 0;
 }
