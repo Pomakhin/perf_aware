@@ -42,10 +42,6 @@ inline bool isOperation(BYTE value, BYTE op_code) {
     return op_code == (value >> (7 - op_highest_bit));
 }
 
-inline std::string getRegNameByIdx(const int reg_idx, bool is_wide) {
-    return is_wide ? reg_long_table[reg_idx] : reg_short_table[reg_idx];
-}
-
 enum class OpMode : int {
     MemNoDisp = 0b00,
     Mem8bDisp = 0b01,
@@ -90,11 +86,43 @@ OpType getCommonArithmeticOpTypeByCode(BYTE code) {
 }
 
 void simulateRegToRegMov(int reg_idx_dest, int reg_idx_source) {
-    std::cout << getRegNameByIdx(reg_idx_dest, true) << std::hex << ":0x" << simulator.registers[reg_idx_dest] << "->" << "0x" << simulator.registers[reg_idx_source] << std::endl;
-    simulator.registers[reg_idx_dest] = simulator.registers[reg_idx_source];
+    simulator.setRegisterValue(reg_idx_dest, true, simulator.registers[reg_idx_source]);
 }
 
-void simulateRegMemOp(OpMode mod, bool direction_to_reg, int reg_idx, int rm_idx) {
+void updateFlags(uint16_t value) {
+    bool old_zero_flag = simulator.zero_flag;
+    bool old_sign_flag = simulator.sign_flag;
+    simulator.zero_flag = (value == 0);
+    simulator.sign_flag = (value & 0x8000);
+    if (simulator.zero_flag != old_zero_flag || simulator.sign_flag != old_sign_flag) {
+        std::cout << " flags:" << (old_zero_flag ? "Z" : "") << (old_sign_flag ? "S" : "") << "->" << (simulator.zero_flag ? "Z" : "") << (simulator.sign_flag ? "S" : "");
+    }
+}
+
+void simulateImmediateToRegArithmetic(OpType op_type, int reg_idx, uint16_t data) {
+    switch (op_type) {
+    case OpType::Mov:
+        break;
+    case OpType::Add:
+        simulator.setRegisterValue(reg_idx, true, simulator.registers[reg_idx] + data);
+        updateFlags(simulator.registers[reg_idx]);
+        break;
+    case OpType::Sub:
+        simulator.setRegisterValue(reg_idx, true, simulator.registers[reg_idx] - data);
+        updateFlags(simulator.registers[reg_idx]);
+        break;
+    case OpType::Cmp:
+        updateFlags(simulator.registers[reg_idx] - data);
+        break;
+    case OpType::Error:
+        break;
+    default:;
+    }
+}
+
+void simulateRegMemOp(OpType op_type, OpMode mod, bool direction_to_reg, int reg_idx, int rm_idx) {
+    int reg_idx_dest = direction_to_reg ? reg_idx : rm_idx;
+    int reg_idx_source = direction_to_reg ? rm_idx : reg_idx;
     switch (mod) {
     case OpMode::MemNoDisp:
         break;
@@ -103,7 +131,25 @@ void simulateRegMemOp(OpMode mod, bool direction_to_reg, int reg_idx, int rm_idx
     case OpMode::Mem16bDisp:
         break;
     case OpMode::Reg:
-        simulateRegToRegMov(direction_to_reg ? reg_idx : rm_idx, direction_to_reg ? rm_idx : reg_idx);
+        switch (op_type) {
+        case OpType::Mov:
+            simulateRegToRegMov(reg_idx_dest, reg_idx_source);
+            break;
+        case OpType::Add:
+            simulator.setRegisterValue(reg_idx_dest, true, simulator.registers[reg_idx_dest] + simulator.registers[reg_idx_source]);
+            updateFlags(simulator.registers[reg_idx_dest]);
+            break;
+        case OpType::Sub:
+            simulator.setRegisterValue(reg_idx_dest, true, simulator.registers[reg_idx_dest] - simulator.registers[reg_idx_source]);
+            updateFlags(simulator.registers[reg_idx_dest]);
+            break;
+        case OpType::Cmp:
+            updateFlags(simulator.registers[reg_idx_dest] - simulator.registers[reg_idx_source]);
+            break;
+        case OpType::Error:
+            break;
+        default:;
+        }
         break;
     default:;
     }
@@ -115,8 +161,11 @@ void simulateImmediateMov(int reg_idx, bool is_wide, uint16_t value) {
         std::cout << "unsupported mov to short reg" << std::endl;
         return;
     }
-    std::cout << getRegNameByIdx(reg_idx, is_wide) << std::hex << ":0x" << simulator.registers[reg_idx] << "->" << "0x" << value << std::endl;
-    simulator.registers[reg_idx] = value;
+    simulator.setRegisterValue(reg_idx, is_wide, value);
+}
+
+void printOperation(const OpType op_type, const std::string &first_operand, const std::string &second_operand) {
+    std::cout << std::endl << std::dec << GetOpName(op_type) << ' ' << first_operand << ", " << second_operand << "; ";
 }
 
 int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, OpType op_type) {
@@ -147,9 +196,8 @@ int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, OpType o
     } 
     default:;
     }
-    std::cout << GetOpName(op_type) << ' '  
-              << (direction_to_reg ? (reg + ", " + rm) : (rm + ", " + reg)) << "; ";
-    simulateRegMemOp(mod, direction_to_reg, reg_idx, rm_idx);
+    printOperation(op_type, direction_to_reg ? reg : rm, direction_to_reg ? rm : reg);
+    simulateRegMemOp(op_type, mod, direction_to_reg, reg_idx, rm_idx);
     return result;
 }
 
@@ -172,7 +220,7 @@ int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec, const int curr
     std::string rm;
     int data = 0;
     BYTE arithmeticsOpCode = (vec[current_idx + 1] & 0b00111000) >> 3;
-    std::string op_name = GetOpName(getCommonArithmeticOpTypeByCode(arithmeticsOpCode));
+    OpType op_type = getCommonArithmeticOpTypeByCode(arithmeticsOpCode);
     OpMode mod =  static_cast<OpMode>(vec[current_idx + 1] >> 6);
     result = 2;
     switch (mod) {
@@ -186,22 +234,23 @@ int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec, const int curr
             rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + ']';
             result += decodeData(vec, current_idx + 2, is_word_data, data);
         }
-        std::cout << op_name << ' ' << rm << ", " << data << std::endl;
+        printOperation(op_type, rm, std::to_string(data));
         break;
     case OpMode::Mem8bDisp:
         rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[current_idx + 2]) + ']';
         result += 1 + decodeData(vec, current_idx + 3, is_word_data, data);
-        std::cout << op_name << ' ' << rm << ", " << data << std::endl;
+        printOperation(op_type, rm, std::to_string(data));
         break;
     case OpMode::Mem16bDisp:
         rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[current_idx + 2]) + (vec[current_idx + 3] << 8)) + ']';
         result += 2 + decodeData(vec, current_idx + 4, is_word_data, data);
-        std::cout << op_name << ' ' << rm << ", " << data << std::endl;
+        printOperation(op_type, rm, std::to_string(data));
         break;
     case OpMode::Reg: {
         rm = getRegNameByIdx(rm_idx, w);
         result += decodeData(vec, current_idx + 2, is_word_data, data);
-        std::cout << op_name << ' ' << rm << ", " << data << std::endl;
+        printOperation(op_type, rm, std::to_string(data));
+        simulateImmediateToRegArithmetic(op_type, rm_idx, data);
         break;
     }
     default:
@@ -215,10 +264,9 @@ int decodeImmediateToAccumArithmetic(const std::vector<BYTE> &vec, const int cur
     int result = 1;
     bool w = 0b00000001 & vec[current_idx];
     BYTE arithmeticsOpCode = (vec[current_idx] & 0b00111000) >> 3;
-    std::string op_name = GetOpName(getCommonArithmeticOpTypeByCode(arithmeticsOpCode));
     int data = 0;
     result += decodeData(vec, current_idx + 1, w, data);
-    std::cout << op_name << (w ? " AX, " : " AL, ") << data << std::endl;
+    printOperation(getCommonArithmeticOpTypeByCode(arithmeticsOpCode), (w ? "AX" : "AL"), std::to_string(data));
     return result;
 }
 
@@ -232,7 +280,7 @@ int decodeImmediateToRegMov(const std::vector<BYTE> &vec,
     if (w) {
         value += static_cast<uint16_t>(vec[current_idx + 2]) << 8;
     }
-    std::cout << "mov " << reg << ", " << value << "; ";
+    printOperation(OpType::Mov, reg, std::to_string(value));
     simulateImmediateMov(reg_idx, w, value);
     return w ? 3 : 2;
 }
@@ -320,7 +368,7 @@ int tryDecodeJump(const std::vector<BYTE> &vec, const int current_idx) {
         break;
     }
     const char c = reinterpret_cast<const char&>(vec[current_idx + 1]) + 2;
-    std::cout << op_name << " $" << (c >= 0 ? "+" : "") << std::to_string(c) << std::endl;
+    std::cout << std::endl << op_name << " $" << (c >= 0 ? "+" : "") << std::to_string(c);
     return 2;
 }
 
@@ -352,7 +400,7 @@ int main(int argc, char** argv)
             current_idx += decodeOperation(vec, current_idx);
         }
     }
-    std::cout << "Final registers:" << std::endl;
+    std::cout << std::endl << "Final registers:" << std::endl;
     simulator.printRegisters();
     return 0;
 }
