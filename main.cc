@@ -164,30 +164,31 @@ void simulateImmediateMov(int reg_idx, bool is_wide, uint16_t value) {
     simulator.setRegisterValue(reg_idx, is_wide, value);
 }
 
-void printOperation(const OpType op_type, const std::string &first_operand, const std::string &second_operand) {
+void onOperationDecoded(const OpType op_type, const std::string &first_operand, const std::string &second_operand, int bytes_processed) {
     std::cout << std::endl << std::dec << GetOpName(op_type) << ' ' << first_operand << ", " << second_operand << "; ";
+    simulator.setInstructionPointer(simulator.instruction_pointer + bytes_processed);
 }
 
-int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, OpType op_type) {
+int decodeRegMemOp(const std::vector<BYTE> &vec, OpType op_type) {
     int result = 0;
-    bool direction_to_reg = 0b00000010 & vec[current_idx];
-    bool w = 0b00000001 & vec[current_idx];
-    int reg_idx = ((vec[current_idx + 1]) & 0b00111000) >> 3;
-    int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
+    bool direction_to_reg = 0b00000010 & vec[simulator.instruction_pointer];
+    bool w = 0b00000001 & vec[simulator.instruction_pointer];
+    int reg_idx = ((vec[simulator.instruction_pointer + 1]) & 0b00111000) >> 3;
+    int rm_idx = ((vec[simulator.instruction_pointer + 1]) & 0b00000111);
     std::string reg = getRegNameByIdx(reg_idx, w);
     std::string rm;
-    OpMode mod =  static_cast<OpMode>(vec[current_idx + 1] >> 6);
+    OpMode mod =  static_cast<OpMode>(vec[simulator.instruction_pointer + 1] >> 6);
     switch (mod) {
     case OpMode::MemNoDisp:
         rm = '[' + effective_address_calc_table[rm_idx] + ']';
         result = 2;
         break;
     case OpMode::Mem8bDisp:
-        rm = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[current_idx + 2]) + ']';
+        rm = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[simulator.instruction_pointer + 2]) + ']';
         result = 3;
         break;
     case OpMode::Mem16bDisp:
-        rm = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[current_idx + 2]) + (vec[current_idx + 3] << 8)) + ']';
+        rm = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[simulator.instruction_pointer + 2]) + (vec[simulator.instruction_pointer + 3] << 8)) + ']';
         result = 4;
         break;
     case OpMode::Reg: {
@@ -196,7 +197,7 @@ int decodeRegMemOp(const std::vector<BYTE> &vec, const int current_idx, OpType o
     } 
     default:;
     }
-    printOperation(op_type, direction_to_reg ? reg : rm, direction_to_reg ? rm : reg);
+    onOperationDecoded(op_type, direction_to_reg ? reg : rm, direction_to_reg ? rm : reg, result);
     simulateRegMemOp(op_type, mod, direction_to_reg, reg_idx, rm_idx);
     return result;
 }
@@ -211,45 +212,45 @@ int decodeData(const std::vector<BYTE> &vec, const int current_idx, const bool i
     return bytes_processed;
 }
 
-int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec, const int current_idx) {
+int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec) {
     int result = 0;
-    bool s = 0b00000010 & vec[current_idx];
-    bool w = 0b00000001 & vec[current_idx];
+    bool s = 0b00000010 & vec[simulator.instruction_pointer];
+    bool w = 0b00000001 & vec[simulator.instruction_pointer];
     bool is_word_data = !s && w;
-    int rm_idx = ((vec[current_idx + 1]) & 0b00000111);
+    int rm_idx = ((vec[simulator.instruction_pointer + 1]) & 0b00000111);
     std::string rm;
     int data = 0;
-    BYTE arithmeticsOpCode = (vec[current_idx + 1] & 0b00111000) >> 3;
+    BYTE arithmeticsOpCode = (vec[simulator.instruction_pointer + 1] & 0b00111000) >> 3;
     OpType op_type = getCommonArithmeticOpTypeByCode(arithmeticsOpCode);
-    OpMode mod =  static_cast<OpMode>(vec[current_idx + 1] >> 6);
+    OpMode mod =  static_cast<OpMode>(vec[simulator.instruction_pointer + 1] >> 6);
     result = 2;
     switch (mod) {
     case OpMode::MemNoDisp:
         if (rm_idx == 0b110) {
             int direct_address = 0;
-            result += decodeData(vec, current_idx + 2, w, direct_address);
+            result += decodeData(vec, simulator.instruction_pointer + 2, w, direct_address);
             rm = std::string(w ? "word " : "byte ") + '[' + std::to_string(direct_address) + ']';
-            result += decodeData(vec, current_idx + result, is_word_data, data);
+            result += decodeData(vec, simulator.instruction_pointer + result, is_word_data, data);
         } else {
             rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + ']';
-            result += decodeData(vec, current_idx + 2, is_word_data, data);
+            result += decodeData(vec, simulator.instruction_pointer + 2, is_word_data, data);
         }
-        printOperation(op_type, rm, std::to_string(data));
+        onOperationDecoded(op_type, rm, std::to_string(data), result);
         break;
     case OpMode::Mem8bDisp:
-        rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[current_idx + 2]) + ']';
-        result += 1 + decodeData(vec, current_idx + 3, is_word_data, data);
-        printOperation(op_type, rm, std::to_string(data));
+        rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[simulator.instruction_pointer + 2]) + ']';
+        result += 1 + decodeData(vec, simulator.instruction_pointer + 3, is_word_data, data);
+        onOperationDecoded(op_type, rm, std::to_string(data), result);
         break;
     case OpMode::Mem16bDisp:
-        rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[current_idx + 2]) + (vec[current_idx + 3] << 8)) + ']';
-        result += 2 + decodeData(vec, current_idx + 4, is_word_data, data);
-        printOperation(op_type, rm, std::to_string(data));
+        rm = std::string(w ? "word " : "byte ") + '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(static_cast<int>(vec[simulator.instruction_pointer + 2]) + (vec[simulator.instruction_pointer + 3] << 8)) + ']';
+        result += 2 + decodeData(vec, simulator.instruction_pointer + 4, is_word_data, data);
+        onOperationDecoded(op_type, rm, std::to_string(data), result);
         break;
     case OpMode::Reg: {
         rm = getRegNameByIdx(rm_idx, w);
-        result += decodeData(vec, current_idx + 2, is_word_data, data);
-        printOperation(op_type, rm, std::to_string(data));
+        result += decodeData(vec, simulator.instruction_pointer + 2, is_word_data, data);
+        onOperationDecoded(op_type, rm, std::to_string(data), result);
         simulateImmediateToRegArithmetic(op_type, rm_idx, data);
         break;
     }
@@ -260,57 +261,60 @@ int decodeRegMemImmediateArithmetic(const std::vector<BYTE> &vec, const int curr
     return result;
 }
 
-int decodeImmediateToAccumArithmetic(const std::vector<BYTE> &vec, const int current_idx) {
+int decodeImmediateToAccumArithmetic(const std::vector<BYTE> &vec) {
     int result = 1;
-    bool w = 0b00000001 & vec[current_idx];
-    BYTE arithmeticsOpCode = (vec[current_idx] & 0b00111000) >> 3;
+    bool w = 0b00000001 & vec[simulator.instruction_pointer];
+    BYTE arithmeticsOpCode = (vec[simulator.instruction_pointer] & 0b00111000) >> 3;
     int data = 0;
-    result += decodeData(vec, current_idx + 1, w, data);
-    printOperation(getCommonArithmeticOpTypeByCode(arithmeticsOpCode), (w ? "AX" : "AL"), std::to_string(data));
+    result += decodeData(vec, simulator.instruction_pointer + 1, w, data);
+    onOperationDecoded(getCommonArithmeticOpTypeByCode(arithmeticsOpCode), (w ? "AX" : "AL"), std::to_string(data), result);
     return result;
 }
 
 
-int decodeImmediateToRegMov(const std::vector<BYTE> &vec,
-                            const int current_idx) {
-    bool w = 0b00001000 & vec[current_idx];
-    int reg_idx = vec[current_idx] & 0b00000111;
+int decodeImmediateToRegMov(const std::vector<BYTE> &vec) {
+    bool w = 0b00001000 & vec[simulator.instruction_pointer];
+    int reg_idx = vec[simulator.instruction_pointer] & 0b00000111;
     std::string reg = getRegNameByIdx(reg_idx, w);
-    uint16_t value = vec[current_idx + 1];
+    uint16_t value = vec[simulator.instruction_pointer + 1];
     if (w) {
-        value += static_cast<uint16_t>(vec[current_idx + 2]) << 8;
+        value += static_cast<uint16_t>(vec[simulator.instruction_pointer + 2]) << 8;
     }
-    printOperation(OpType::Mov, reg, std::to_string(value));
+    onOperationDecoded(OpType::Mov, reg, std::to_string(value), w ? 3 : 2);
     simulateImmediateMov(reg_idx, w, value);
     return w ? 3 : 2;
 }
 
-int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec, const int current_idx)
+int tryDecodeCommonArithmetic(const std::vector<BYTE> &vec)
 {
-    if (((vec[current_idx] >> 2) & 0b110001) == 0b000000) {
+    if (((vec[simulator.instruction_pointer] >> 2) & 0b110001) == 0b000000) {
         // reg/mem
-        BYTE arithmeticsOpCode = (vec[current_idx] & 0b00111000) >> 3;
-        return decodeRegMemOp(vec, current_idx, getCommonArithmeticOpTypeByCode(arithmeticsOpCode));
+        BYTE arithmeticsOpCode = (vec[simulator.instruction_pointer] & 0b00111000) >> 3;
+        return decodeRegMemOp(vec, getCommonArithmeticOpTypeByCode(arithmeticsOpCode));
     }
-    else if ((vec[current_idx] >> 2) == 0b100000) {
+    else if ((vec[simulator.instruction_pointer] >> 2) == 0b100000) {
         // immediate from reg/mem
-        return decodeRegMemImmediateArithmetic(vec, current_idx);
+        return decodeRegMemImmediateArithmetic(vec);
     }
-    else if (((vec[current_idx] >> 1) & 0b1100011) == 0b0000010) {
+    else if (((vec[simulator.instruction_pointer] >> 1) & 0b1100011) == 0b0000010) {
         // immediate to accumulator
-        return decodeImmediateToAccumArithmetic(vec, current_idx);
+        return decodeImmediateToAccumArithmetic(vec);
     }
     return 0;
 }
 
-int tryDecodeJump(const std::vector<BYTE> &vec, const int current_idx) {
+int tryDecodeJump(const std::vector<BYTE> &vec) {
     std::string op_name;
-    switch (vec[current_idx]) {
+    bool found = true;
+    bool is_jump_condition = false;
+    switch (vec[simulator.instruction_pointer]) {
         case 0b01110101: 
             op_name = "jnz";
+            is_jump_condition = !simulator.zero_flag;
         break;
         case 0b01110100: 
             op_name = "je";
+            is_jump_condition = simulator.zero_flag;
         break;
         case 0b01111100: 
             op_name = "jl";
@@ -366,25 +370,37 @@ int tryDecodeJump(const std::vector<BYTE> &vec, const int current_idx) {
         case 0b11100011: 
             op_name = "jcxz";
         break;
+        default:
+            found = false;
+        break;
+        }
+    if (found) {
+        const char c = reinterpret_cast<const char&>(vec[simulator.instruction_pointer + 1]) + 2;
+        std::cout << std::endl << op_name << " $" << (c >= 0 ? "+" : "") << std::to_string(c) << "; " ;
+        if (is_jump_condition) {
+            simulator.setInstructionPointer(simulator.instruction_pointer + c);    
+        } else {
+            simulator.setInstructionPointer(simulator.instruction_pointer + 2);    
+        }
+        return 2;
     }
-    const char c = reinterpret_cast<const char&>(vec[current_idx + 1]) + 2;
-    std::cout << std::endl << op_name << " $" << (c >= 0 ? "+" : "") << std::to_string(c);
-    return 2;
+    return 0;
 }
 
-int decodeOperation(const std::vector<BYTE> &vec, const int current_idx)
+void decodeOperation(const std::vector<BYTE> &vec)
 {
-    int processed_bytes = 0;
-    processed_bytes = tryDecodeCommonArithmetic(vec, current_idx);
-    if (isOperation(vec[current_idx], reg_mem_mov_code)) {
-        processed_bytes = decodeRegMemOp(vec, current_idx, OpType::Mov);
-    } else if (isOperation(vec[current_idx], immediate_to_reg_mov_code)) {
-        processed_bytes = decodeImmediateToRegMov(vec, current_idx);
+    if (tryDecodeCommonArithmetic(vec)) {
+        return;
     }
-    if (processed_bytes == 0) {
-        processed_bytes = tryDecodeJump(vec, current_idx);
+    if (isOperation(vec[simulator.instruction_pointer], reg_mem_mov_code) && decodeRegMemOp(vec, OpType::Mov)) {
+        return;
     }
-    return processed_bytes;
+    if (isOperation(vec[simulator.instruction_pointer], immediate_to_reg_mov_code) && decodeImmediateToRegMov(vec)) {
+        return;
+    }
+    if (tryDecodeJump(vec)) {
+        return;
+    }
 }
 
 int main(int argc, char** argv)
@@ -395,9 +411,8 @@ int main(int argc, char** argv)
         std::cout << "bits 16" << std::endl;
         auto vec = readFile(argv[1]);
 
-        int current_idx = 0;
-        while (current_idx < vec.size()) {
-            current_idx += decodeOperation(vec, current_idx);
+        while (simulator.instruction_pointer < vec.size()) {
+            decodeOperation(vec);
         }
     }
     std::cout << std::endl << "Final registers:" << std::endl;
