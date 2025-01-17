@@ -1,6 +1,10 @@
 ﻿#include <iostream>
 #include "Tables.cpp"
+
+typedef unsigned char BYTE;
+
 struct Simulator {
+    BYTE memory[0x10000];
     uint16_t registers[8];
     uint16_t instruction_pointer = 0;
     bool sign_flag = false;
