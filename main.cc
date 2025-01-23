@@ -94,6 +94,17 @@ void updateFlags(uint16_t value) {
     }
 }
 
+// little endian
+void simulateStoreToMemory(int memory_address, uint16_t value) {
+    simulator.memory[memory_address] = value & 0xFF;
+    simulator.memory[memory_address + 1] = (value >> 8) & 0xFF;
+}
+
+void simulateLoadFromMemory(int memory_address, int reg_idx) {
+    uint16_t value = simulator.memory[memory_address] | (simulator.memory[memory_address + 1] << 8);
+    simulator.setRegisterValue(reg_idx, true, value);
+}
+
 void simulateImmediateToRegOp(OpType op_type, int reg_idx, uint16_t data) {
     switch (op_type) {
     case OpType::Mov:
@@ -116,15 +127,18 @@ void simulateImmediateToRegOp(OpType op_type, int reg_idx, uint16_t data) {
     }
 }
 
-void simulateRegMemOp(OpType op_type, OpMode mod, bool direction_to_reg, int reg_idx, int rm_idx) {
+void simulateRegMemOp(OpType op_type, OpMode mod, bool direction_to_reg, int reg_idx, int rm_idx, int memory_location) {
     int reg_idx_dest = direction_to_reg ? reg_idx : rm_idx;
     int reg_idx_source = direction_to_reg ? rm_idx : reg_idx;
     switch (mod) {
     case OpMode::MemNoDisp:
-        break;
     case OpMode::Mem8bDisp:
-        break;
     case OpMode::Mem16bDisp:
+        if (direction_to_reg) {
+            simulateLoadFromMemory(memory_location, reg_idx);
+        } else {
+            simulateStoreToMemory(memory_location, simulator.registers[reg_idx]);
+        }
         break;
     case OpMode::Reg:
         switch (op_type) {
@@ -166,34 +180,32 @@ int decodeData(const std::vector<BYTE>& vec, const int current_idx, const bool i
     return bytes_processed;
 }
 
-int generateMemoryAddressString(const std::vector<BYTE>& vec, OpMode mod, int instruction_pointer_shift, int rm_idx, bool is_word_register, bool is_word_data, bool needs_size_prefix,
-                                std::string& address_string) {
+int decodeLocation(const std::vector<BYTE>& vec, OpMode mod, int instruction_pointer_shift, int rm_idx, bool is_word_register, bool is_word_data, bool needs_size_prefix, std::string& location_string,
+                   int& location) {
     int extra_bytes_processed = 0;
     switch (mod) {
     case OpMode::MemNoDisp:
         if (rm_idx == 0b110) {
-            int direct_address = 0;
-            extra_bytes_processed += decodeData(vec, simulator.instruction_pointer + instruction_pointer_shift, is_word_data, direct_address);
-            address_string = '[' + std::to_string(direct_address) + ']';
+            extra_bytes_processed += decodeData(vec, simulator.instruction_pointer + instruction_pointer_shift, is_word_data, location);
+            location_string = '[' + std::to_string(location) + ']';
         } else {
-            address_string = '[' + effective_address_calc_table[rm_idx] + ']';
+            location_string = '[' + effective_address_calc_table[rm_idx].second + ']';
+            location = simulator.getEffectiveAddress(effective_address_calc_table[rm_idx].first);
         }
         break;
     case OpMode::Mem8bDisp:
-        address_string = '[' + effective_address_calc_table[rm_idx] + " + " + std::to_string(vec[simulator.instruction_pointer + instruction_pointer_shift]) + ']';
-        extra_bytes_processed = 1;
-        break;
-    case OpMode::Mem16bDisp:
-        address_string = '[' + effective_address_calc_table[rm_idx] + " + " +
-                         std::to_string(static_cast<int>(vec[simulator.instruction_pointer + instruction_pointer_shift]) + (vec[simulator.instruction_pointer + instruction_pointer_shift] << 8)) + ']';
-        extra_bytes_processed = 2;
-        break;
+    case OpMode::Mem16bDisp: {
+        int displacement = 0;
+        extra_bytes_processed = decodeData(vec, simulator.instruction_pointer + instruction_pointer_shift, mod == OpMode::Mem16bDisp, displacement);
+        location_string = '[' + effective_address_calc_table[rm_idx].second + " + " + std::to_string(displacement) + ']';
+        location = simulator.getEffectiveAddress(effective_address_calc_table[rm_idx].first) + displacement;
+    } break;
     case OpMode::Reg:
-        address_string = getRegNameByIdx(rm_idx, is_word_register);
+        location_string = getRegNameByIdx(rm_idx, is_word_register);
         break;
     }
     const std::string size_prefix = needs_size_prefix ? (is_word_register ? "word " : "byte ") : "";
-    address_string = size_prefix + address_string;
+    location_string = size_prefix + location_string;
     return extra_bytes_processed;
 }
 
@@ -206,9 +218,10 @@ int decodeRegMemOp(const std::vector<BYTE>& vec, OpType op_type) {
     std::string rm;
     int bytes_processed = 2;
     OpMode mod = static_cast<OpMode>(vec[simulator.instruction_pointer + 1] >> 6);
-    bytes_processed += generateMemoryAddressString(vec, mod, bytes_processed, rm_idx, w, w, false, rm);
+    int memory_location = 0;
+    bytes_processed += decodeLocation(vec, mod, bytes_processed, rm_idx, w, w, false, rm, memory_location);
     onOperationDecoded(op_type, direction_to_reg ? reg : rm, direction_to_reg ? rm : reg, bytes_processed);
-    simulateRegMemOp(op_type, mod, direction_to_reg, reg_idx, rm_idx);
+    simulateRegMemOp(op_type, mod, direction_to_reg, reg_idx, rm_idx, memory_location);
     return bytes_processed;
 }
 
@@ -217,13 +230,15 @@ int decodeImmediateModOp(const std::vector<BYTE>& vec, OpType op_type, int rm_id
     std::string rm;
     OpMode mod = static_cast<OpMode>(vec[simulator.instruction_pointer + 1] >> 6);
     int bytes_processed = 2;
-    bytes_processed += generateMemoryAddressString(vec, mod, bytes_processed, rm_idx, is_word_register, is_word_data, true, rm);
+    int memory_location = 0;
+    bytes_processed += decodeLocation(vec, mod, bytes_processed, rm_idx, is_word_register, is_word_data, true, rm, memory_location);
     bytes_processed += decodeData(vec, simulator.instruction_pointer + bytes_processed, is_word_data, data);
     onOperationDecoded(op_type, rm, std::to_string(data), bytes_processed);
     switch (mod) {
     case OpMode::MemNoDisp:
     case OpMode::Mem8bDisp:
     case OpMode::Mem16bDisp:
+        simulateStoreToMemory(memory_location, data);
         break;
     case OpMode::Reg: {
         simulateImmediateToRegOp(op_type, rm_idx, data);
