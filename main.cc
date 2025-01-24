@@ -166,8 +166,7 @@ void simulateRegMemOp(OpType op_type, OpMode mod, bool direction_to_reg, int reg
 }
 
 void onOperationDecoded(const OpType op_type, const std::string& first_operand, const std::string& second_operand, int bytes_processed) {
-    std::cout << std::endl << std::dec << GetOpName(op_type) << ' ' << first_operand << ", " << second_operand << "; ";
-    simulator.setInstructionPointer(simulator.instruction_pointer + bytes_processed);
+    std::cout << std::endl << std::dec << GetOpName(op_type) << ' ' << first_operand << ", " << second_operand << " ;";
 }
 
 int decodeData(const std::vector<BYTE>& vec, const int current_idx, const bool is_word_data, int& result) {
@@ -219,9 +218,10 @@ int decodeRegMemOp(const std::vector<BYTE>& vec, OpType op_type) {
     int bytes_processed = 2;
     OpMode mod = static_cast<OpMode>(vec[simulator.instruction_pointer + 1] >> 6);
     int memory_location = 0;
-    bytes_processed += decodeLocation(vec, mod, bytes_processed, rm_idx, w, w, false, rm, memory_location);
+    bytes_processed += decodeLocation(vec, mod, bytes_processed, rm_idx, w, w, mod != OpMode::Reg && !direction_to_reg, rm, memory_location);
     onOperationDecoded(op_type, direction_to_reg ? reg : rm, direction_to_reg ? rm : reg, bytes_processed);
     simulateRegMemOp(op_type, mod, direction_to_reg, reg_idx, rm_idx, memory_location);
+    simulator.setInstructionPointer(simulator.instruction_pointer + bytes_processed);
     return bytes_processed;
 }
 
@@ -231,7 +231,7 @@ int decodeImmediateModOp(const std::vector<BYTE>& vec, OpType op_type, int rm_id
     OpMode mod = static_cast<OpMode>(vec[simulator.instruction_pointer + 1] >> 6);
     int bytes_processed = 2;
     int memory_location = 0;
-    bytes_processed += decodeLocation(vec, mod, bytes_processed, rm_idx, is_word_register, is_word_data, true, rm, memory_location);
+    bytes_processed += decodeLocation(vec, mod, bytes_processed, rm_idx, is_word_register, is_word_data, mod != OpMode::Reg, rm, memory_location);
     bytes_processed += decodeData(vec, simulator.instruction_pointer + bytes_processed, is_word_data, data);
     onOperationDecoded(op_type, rm, std::to_string(data), bytes_processed);
     switch (mod) {
@@ -245,6 +245,7 @@ int decodeImmediateModOp(const std::vector<BYTE>& vec, OpType op_type, int rm_id
         break;
     }
     }
+    simulator.setInstructionPointer(simulator.instruction_pointer + bytes_processed);
     return bytes_processed;
 }
 
@@ -266,7 +267,8 @@ int decodeImmediateToAccumArithmetic(const std::vector<BYTE>& vec) {
     BYTE arithmeticsOpCode = (vec[simulator.instruction_pointer] & 0b00111000) >> 3;
     int data = 0;
     result += decodeData(vec, simulator.instruction_pointer + 1, w, data);
-    onOperationDecoded(getCommonArithmeticOpTypeByCode(arithmeticsOpCode), (w ? "AX" : "AL"), std::to_string(data), result);
+    onOperationDecoded(getCommonArithmeticOpTypeByCode(arithmeticsOpCode), (w ? "ax" : "al"), std::to_string(data), result);
+    simulator.setInstructionPointer(simulator.instruction_pointer + result);
     return result;
 }
 
@@ -280,6 +282,7 @@ int decodeImmediateToRegMov(const std::vector<BYTE>& vec) {
     }
     onOperationDecoded(OpType::Mov, reg, std::to_string(value), w ? 3 : 2);
     simulateImmediateMov(reg_idx, w, value);
+    simulator.setInstructionPointer(simulator.instruction_pointer + (w ? 3 : 2));
     return w ? 3 : 2;
 }
 
@@ -313,7 +316,7 @@ int tryDecodeJump(const std::vector<BYTE>& vec) {
     bool is_jump_condition = false;
     switch (vec[simulator.instruction_pointer]) {
     case 0b01110101:
-        op_name = "jnz";
+        op_name = "jne";
         is_jump_condition = !simulator.zero_flag;
         break;
     case 0b01110100:
@@ -380,7 +383,7 @@ int tryDecodeJump(const std::vector<BYTE>& vec) {
     }
     if (found) {
         const char c = reinterpret_cast<const char&>(vec[simulator.instruction_pointer + 1]) + 2;
-        std::cout << std::endl << op_name << " $" << (c >= 0 ? "+" : "") << std::to_string(c) << "; ";
+        std::cout << std::endl << op_name << " $" << (c >= 0 ? "+" : "") << std::to_string(c) << " ;";
         if (is_jump_condition) {
             simulator.setInstructionPointer(simulator.instruction_pointer + c);
         } else {

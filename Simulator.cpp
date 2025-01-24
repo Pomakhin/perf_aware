@@ -11,13 +11,16 @@ struct Simulator {
     bool zero_flag = false;
 
     void setRegisterValue(int reg_idx, bool is_wide, uint16_t value) {
-        std::cout << getRegNameByIdx(reg_idx, is_wide) << std::hex << ":0x" << registers[reg_idx] << "->"
+        if (value == registers[reg_idx]) {
+            return;
+        }
+        std::cout << " " << getRegNameByIdx(reg_idx, is_wide) << std::hex << ":0x" << registers[reg_idx] << "->"
                   << "0x" << value;
         registers[reg_idx] = value;
     }
 
     void setInstructionPointer(uint16_t value) {
-        std::cout << "IP" << std::hex << ":0x" << instruction_pointer << "->"
+        std::cout << " ip" << std::hex << ":0x" << instruction_pointer << "->"
                   << "0x" << value << " ";
         instruction_pointer = value;
     }
