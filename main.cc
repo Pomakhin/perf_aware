@@ -100,8 +100,12 @@ void simulateStoreToMemory(int memory_address, uint16_t value) {
     simulator.memory[memory_address + 1] = (value >> 8) & 0xFF;
 }
 
+uint16_t getValueFromMemory(int memory_address) {
+    return simulator.memory[memory_address] | (simulator.memory[memory_address + 1] << 8);
+}
+
 void simulateLoadFromMemory(int memory_address, int reg_idx) {
-    uint16_t value = simulator.memory[memory_address] | (simulator.memory[memory_address + 1] << 8);
+    uint16_t value = getValueFromMemory(memory_address);
     simulator.setRegisterValue(reg_idx, true, value);
 }
 
@@ -134,10 +138,28 @@ void simulateRegMemOp(OpType op_type, OpMode mod, bool direction_to_reg, int reg
     case OpMode::MemNoDisp:
     case OpMode::Mem8bDisp:
     case OpMode::Mem16bDisp:
-        if (direction_to_reg) {
-            simulateLoadFromMemory(memory_location, reg_idx);
-        } else {
-            simulateStoreToMemory(memory_location, simulator.registers[reg_idx]);
+        switch (op_type) {
+        case OpType::Mov:
+            if (direction_to_reg) {
+                simulateLoadFromMemory(memory_location, reg_idx);
+            } else {
+                simulateStoreToMemory(memory_location, simulator.registers[reg_idx]);
+            }
+            break;
+        case OpType::Add:
+            simulator.setRegisterValue(reg_idx_dest, true, simulator.registers[reg_idx_dest] + getValueFromMemory(memory_location));
+            updateFlags(simulator.registers[reg_idx_dest]);
+            break;
+        case OpType::Sub:
+            simulator.setRegisterValue(reg_idx_dest, true, simulator.registers[reg_idx_dest] - getValueFromMemory(memory_location));
+            updateFlags(simulator.registers[reg_idx_dest]);
+            break;
+        case OpType::Cmp:
+            updateFlags(simulator.registers[reg_idx_dest] - getValueFromMemory(memory_location));
+            break;
+        case OpType::Error:
+            break;
+        default:;
         }
         break;
     case OpMode::Reg:
