@@ -10,6 +10,18 @@ struct Simulator {
     bool sign_flag = false;
     bool zero_flag = false;
 
+    BYTE currentByte() const {
+        return memory[instruction_pointer];
+    }
+
+    BYTE getShiftedByte(int shift) {
+        return memory[instruction_pointer + shift];
+    }
+
+    BYTE getByte(int memory_address) const {
+        return memory[memory_address];
+    }
+
     void setRegisterValue(int reg_idx, bool is_wide, uint16_t value) {
         if (value == registers[reg_idx]) {
             return;
