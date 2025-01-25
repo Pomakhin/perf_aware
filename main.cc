@@ -442,6 +442,12 @@ int main(int argc, char** argv) {
         while (simulator.instruction_pointer < program_size) {
             decodeOperation();
         }
+        if (argc > 2 && std::string(argv[2]) == "-dump") {
+            std::ofstream file;
+            file.open("memory.data", std::ios_base::binary);
+            file.write((const char*)simulator.memory, sizeof(simulator.memory));
+            file.close();
+        }
     }
     std::cout << std::endl << "Final registers:" << std::endl;
     simulator.printRegisters();
