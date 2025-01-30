@@ -1,12 +1,25 @@
 #include <bitset>
 #include <fstream>
-#include <iostream>
 #include <ostream>
 #include <vector>
-#include "Tables.cpp"
 #include "Simulator.cpp"
 
 static Simulator simulator;
+
+std::string GetOpName(OpType opType) {
+    switch (opType) {
+    case OpType::Mov:
+        return "mov";
+    case OpType::Add:
+        return "add";
+    case OpType::Sub:
+        return "sub";
+    case OpType::Cmp:
+        return "cmp";
+    default:
+        return "error";
+    }
+}
 
 int loadProgramToMemory(const char* filename, BYTE* memory) {
     // open the file:
@@ -37,25 +50,6 @@ inline BYTE getHighestBit(BYTE value) {
 inline bool isOperation(BYTE value, BYTE op_code) {
     BYTE op_highest_bit = getHighestBit(op_code);
     return op_code == (value >> (7 - op_highest_bit));
-}
-
-enum class OpMode : int { MemNoDisp = 0b00, Mem8bDisp = 0b01, Mem16bDisp = 0b10, Reg = 0b11 };
-
-enum class OpType : int { Mov, Add, Sub, Cmp, Error };
-
-std::string GetOpName(OpType opType) {
-    switch (opType) {
-    case OpType::Mov:
-        return "mov";
-    case OpType::Add:
-        return "add";
-    case OpType::Sub:
-        return "sub";
-    case OpType::Cmp:
-        return "cmp";
-    default:
-        return "error";
-    }
 }
 
 OpType getCommonArithmeticOpTypeByCode(BYTE code) {
@@ -200,6 +194,44 @@ int decodeData(const int current_idx, const bool is_word_data, int& result) {
     return bytes_processed;
 }
 
+void printCyclesEstimation(const OpType op_type, const OpMode op_mode, bool direction_to_register, bool is_immediate, EffectiveAddressTypes effective_address_type) {
+    LocationType location_left = LocationType::Error;
+    LocationType location_right = LocationType::Error;
+    bool has_displacement = false;
+    switch (op_mode) {
+    case OpMode::MemNoDisp:
+    case OpMode::Mem8bDisp:
+    case OpMode::Mem16bDisp:
+        if (direction_to_register) {
+            location_left = is_immediate ? LocationType::Immediate : LocationType::Reg;
+            location_right = LocationType::Mem;
+        } else {
+            location_left = LocationType::Mem;
+            location_right = is_immediate ? LocationType::Immediate : LocationType::Reg;
+        }
+        has_displacement = op_mode == OpMode::Mem8bDisp || op_mode == OpMode::Mem16bDisp;
+        break;
+    case OpMode::Reg:
+        location_left = LocationType::Reg;
+        location_right = is_immediate ? LocationType::Immediate : LocationType::Reg;
+        break;
+    case OpMode::Error:
+        break;
+    default:;
+    }
+    InstructionType instruction_type{op_type, location_left, location_right};
+    int cycles = 0;
+    auto it = instruction_cycles_map.find(instruction_type);
+    if (it != instruction_cycles_map.end()) {
+        cycles = instruction_cycles_map.at(instruction_type);
+        if (op_mode != OpMode::Reg) {
+            cycles += simulator.getEffectiveAddressCycles(effective_address_type, has_displacement);
+        }
+    }
+
+    std::cout << " ;" << cycles << " cycles";
+}
+
 int decodeLocation(OpMode mod, int instruction_pointer_shift, int rm_idx, bool is_word_register, bool is_word_data, bool needs_size_prefix, std::string& location_string, int& location) {
     int extra_bytes_processed = 0;
     switch (mod) {
@@ -240,6 +272,7 @@ int decodeRegMemOp(OpType op_type) {
     int memory_location = 0;
     bytes_processed += decodeLocation(mod, bytes_processed, rm_idx, w, w, mod != OpMode::Reg && !direction_to_reg, rm, memory_location);
     onOperationDecoded(op_type, direction_to_reg ? reg : rm, direction_to_reg ? rm : reg, bytes_processed);
+    printCyclesEstimation(op_type, mod, direction_to_reg, false, effective_address_calc_table[rm_idx].first);
     simulateRegMemOp(op_type, mod, direction_to_reg, reg_idx, rm_idx, memory_location);
     simulator.setInstructionPointer(simulator.instruction_pointer + bytes_processed);
     return bytes_processed;
@@ -254,6 +287,7 @@ int decodeImmediateModOp(OpType op_type, int rm_idx, bool is_word_register, bool
     bytes_processed += decodeLocation(mod, bytes_processed, rm_idx, is_word_register, is_word_data, mod != OpMode::Reg, rm, memory_location);
     bytes_processed += decodeData(simulator.instruction_pointer + bytes_processed, is_word_data, data);
     onOperationDecoded(op_type, rm, std::to_string(data), bytes_processed);
+    printCyclesEstimation(op_type, mod, false, true, effective_address_calc_table[rm_idx].first);
     switch (mod) {
     case OpMode::MemNoDisp:
     case OpMode::Mem8bDisp:
@@ -288,6 +322,7 @@ int decodeImmediateToAccumArithmetic() {
     int data = 0;
     result += decodeData(simulator.instruction_pointer + 1, w, data);
     onOperationDecoded(getCommonArithmeticOpTypeByCode(arithmeticsOpCode), (w ? "ax" : "al"), std::to_string(data), result);
+    printCyclesEstimation(getCommonArithmeticOpTypeByCode(arithmeticsOpCode), OpMode::Reg, true, true, EffectiveAddressTypes::none);
     simulator.setInstructionPointer(simulator.instruction_pointer + result);
     return result;
 }
@@ -301,6 +336,7 @@ int decodeImmediateToRegMov() {
         value += static_cast<uint16_t>(simulator.getShiftedByte(2)) << 8;
     }
     onOperationDecoded(OpType::Mov, reg, std::to_string(value), w ? 3 : 2);
+    printCyclesEstimation(OpType::Mov, OpMode::Reg, true, true, EffectiveAddressTypes::none);
     simulateImmediateMov(reg_idx, w, value);
     simulator.setInstructionPointer(simulator.instruction_pointer + (w ? 3 : 2));
     return w ? 3 : 2;

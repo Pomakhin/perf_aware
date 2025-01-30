@@ -64,4 +64,26 @@ struct Simulator {
         }
         return 0;
     }
+
+    int getEffectiveAddressCycles(const EffectiveAddressTypes type, bool has_displacement) const {
+        switch (type) {
+        case EffectiveAddressTypes::bp_di:
+        case EffectiveAddressTypes::bx_si: {
+            return has_displacement ? 11 : 7;
+        }
+        case EffectiveAddressTypes::bp_si:
+        case EffectiveAddressTypes::bx_di: {
+            return has_displacement ? 12 : 8;
+        }
+        case EffectiveAddressTypes::si:
+        case EffectiveAddressTypes::di:
+        case EffectiveAddressTypes::bp:
+        case EffectiveAddressTypes::bx: {
+            if (type == EffectiveAddressTypes::bp && !has_displacement) {
+                return 6;
+            }
+            return has_displacement ? 9 : 5;
+        }
+        }
+    }
 };
