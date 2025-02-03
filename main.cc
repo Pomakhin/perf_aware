@@ -188,7 +188,7 @@ int decodeData(const int current_idx, const bool is_word_data, int& result) {
     int bytes_processed = 1;
     result = static_cast<int>(simulator.getByte(current_idx));
     if (is_word_data) {
-        result += (simulator.getShiftedByte(1) << 8);
+        result += (simulator.getByte(current_idx + 1) << 8);
         bytes_processed = 2;
     }
     return bytes_processed;
@@ -221,15 +221,23 @@ void printCyclesEstimation(const OpType op_type, const OpMode op_mode, bool dire
     }
     InstructionType instruction_type{op_type, location_left, location_right};
     int cycles = 0;
+    int cycles_base = 0;
+    int cycles_effective_address = 0;
     auto it = instruction_cycles_map.find(instruction_type);
     if (it != instruction_cycles_map.end()) {
-        cycles = instruction_cycles_map.at(instruction_type);
+        cycles_base = instruction_cycles_map.at(instruction_type);
+        cycles = cycles_base;
         if (op_mode != OpMode::Reg) {
-            cycles += simulator.getEffectiveAddressCycles(effective_address_type, has_displacement);
+            cycles_effective_address = simulator.getEffectiveAddressCycles(effective_address_type, has_displacement);
+            cycles += cycles_effective_address;
+            simulator.total_cycles += cycles;
+            std::cout << " Clocks: +" << cycles << " = " << simulator.total_cycles << " (" << cycles_base << " + " << cycles_effective_address << "ea) |";
+        } else {
+            simulator.total_cycles += cycles;
+            std::cout << " Clocks: +" << cycles << " = " << simulator.total_cycles << " |";
         }
     }
 
-    std::cout << " ;" << cycles << " cycles";
 }
 
 int decodeLocation(OpMode mod, int instruction_pointer_shift, int rm_idx, bool is_word_register, bool is_word_data, bool needs_size_prefix, std::string& location_string, int& location) {

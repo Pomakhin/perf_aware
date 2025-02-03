@@ -9,6 +9,7 @@ struct Simulator {
     uint16_t instruction_pointer = 0;
     bool sign_flag = false;
     bool zero_flag = false;
+    int total_cycles = 0;
 
     BYTE currentByte() const {
         return memory[instruction_pointer];
