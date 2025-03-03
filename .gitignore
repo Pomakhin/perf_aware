@@ -1,2 +1,6 @@
 build
 Builds/
+.idea/
+.vs/
+Haversin\.*/
+x64/
