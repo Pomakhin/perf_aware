@@ -58,15 +58,16 @@ int main(int argc, char* argv[]) {
 
     std::cout << "is_uniform: " << is_uniform << " random seed: " << random_seed << " coords num: " << coords_num << std::endl;
     std::srand(random_seed);
-    std::ostringstream string_stream;
+    std::ofstream json_out_stream;
+    json_out_stream.open("point_pairs.json", std::ofstream::out | std::ofstream::trunc);
     std::fstream file_stream("out.bin", std::ios::out | std::ios::binary | std::ios::trunc);
-    string_stream << "{\"pairs\":[\n";
+    json_out_stream << "{\"pairs\":[\n";
     double sum = 0.0f;
-    char* buffer = new char[coords_num * 110];
-    char* cur_pointer = buffer;
-    auto json_start_str = "{\"pairs\":[\n";
-    memcpy(cur_pointer, json_start_str, strlen(json_start_str));
-    cur_pointer += strlen(json_start_str);
+    // char* buffer = new char[coords_num * 110];
+    // char* cur_pointer = buffer;
+    // auto json_start_str = "{\"pairs\":[\n";
+    // memcpy(cur_pointer, json_start_str, strlen(json_start_str));
+    // cur_pointer += strlen(json_start_str);
     struct CoordComponentData {
         const char* str;
         size_t size;
@@ -86,32 +87,38 @@ int main(int argc, char* argv[]) {
     char temp_buf[20];
     for (int i = 0; i < coords_num; i++) {
         for (auto& data : components_data) {
-            memcpy(cur_pointer, data.str, data.size);
-            cur_pointer += data.size;
+            // memcpy(cur_pointer, data.str, data.size);
+            // cur_pointer += data.size;
             data.coord = GetRandomCoordinate(data.base);
-            cur_pointer += sprintf(cur_pointer, "%.15f", data.coord);
-            *cur_pointer = ' ';
+            // cur_pointer += sprintf(cur_pointer, "%.15f", data.coord);
+            //*cur_pointer = ' ';
+            json_out_stream << data.str << std::setprecision(15) << data.coord;
         }
-        *cur_pointer++ = '}';
+        // *cur_pointer++ = '}';
+        json_out_stream << '}';
 
         double dist = GetHaversineDistance(components_data[0].coord, components_data[1].coord, components_data[2].coord, components_data[3].coord, EarthRadius);
         file_stream.write((char*)&dist, sizeof(dist));
         sum += dist;
         if (i < coords_num - 1) {
-            *cur_pointer++ = ',';
+            // *cur_pointer++ = ',';
+            json_out_stream << ',';
         }
     }
 
     auto json_end_str = "]}";
-    memcpy(cur_pointer, json_end_str, strlen(json_end_str));
-    cur_pointer += strlen(json_end_str);
-    *cur_pointer = '\0';
-    auto file = fopen("point_pairs.json", "w");
-    fputs(buffer, file);
-    fclose(file);
+    json_out_stream << json_end_str;
+    // memcpy(cur_pointer, json_end_str, strlen(json_end_str));
+    // cur_pointer += strlen(json_end_str);
+    //*cur_pointer = '\0';
+    // auto file = fopen("point_pairs.json", "w");
+    // fputs(buffer, file);
+    // fclose(file);
+    std::ofstream json_file;
+    json_out_stream.close();
     file_stream.close();
     std::cout << std::setprecision(15) << "Expected average: " << sum / coords_num << std::endl;
-    delete[] buffer;
+    // delete[] buffer;
 
     return 0;
 }
