@@ -12,7 +12,18 @@ static bool is_uniform = false;
 static int random_seed = 0;
 static int coords_num = 0;
 
+static int clusters_count = 5;
+struct Cluster {
+    float begin;
+    float end;
+};
+std::vector<Cluster> clusters;
+
 float GetRandomCoordinate(float base) {
+    if (!clusters.empty()) {
+        int cluster_idx = std::rand() % clusters_count;
+        return clusters[cluster_idx].begin + static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 0.2f;
+    }
     return static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * base * 2.0f - base;
 }
 
@@ -58,6 +69,14 @@ int main(int argc, char* argv[]) {
 
     std::cout << "is_uniform: " << is_uniform << " random seed: " << random_seed << " coords num: " << coords_num << std::endl;
     std::srand(random_seed);
+    if (!is_uniform) {
+        for (int i = 0; i < clusters_count; i++) {
+            Cluster cluster;
+            cluster.begin = std::rand() / static_cast<float>(RAND_MAX) * 1.8f - 1.0f;
+            cluster.end = cluster.begin + 0.2f;
+            clusters.push_back(cluster);
+        }
+    }
     std::fstream file_stream("out.bin", std::ios::out | std::ios::binary | std::ios::trunc);
     double sum = 0.0f;
     char* buffer = new char[coords_num * 110];
