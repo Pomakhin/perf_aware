@@ -22,7 +22,7 @@ std::vector<Cluster> clusters;
 float GetRandomCoordinate(float base) {
     if (!clusters.empty()) {
         int cluster_idx = std::rand() % clusters_count;
-        return clusters[cluster_idx].begin + static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 0.2f;
+        return (clusters[cluster_idx].begin + static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 0.2f) * base;
     }
     return static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * base * 2.0f - base;
 }
