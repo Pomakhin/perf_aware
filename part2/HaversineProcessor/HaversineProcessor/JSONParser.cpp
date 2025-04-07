@@ -40,19 +40,16 @@ void ProcessCharacterAsPartOfToken(const JSONToken& token, const char character)
     }
 }
 
-void ProcessSeparator(std::stack<JSONToken>& stack, const JSONToken& token) {
-    switch (token.parent_value->type) {
-    case JSONValueType::None:
-        break;
-    case JSONValueType::Number:
-        break;
-    case JSONValueType::String:
-        break;
-    case JSONValueType::Object:
-        break;
-    case JSONValueType::Array:
-        break;
-    default:;
+void ProcessSeparator(std::stack<JSONToken>& stack) {
+    auto token = stack.top();
+    stack.pop();
+    auto prev_token = stack.top();
+    if (prev_token.type == JSONTokenType::Colon) {
+        stack.pop();
+        auto obj_key_token = stack.top();
+        stack.pop();
+        auto obj_token = stack.top();
+        obj_token.parent_value->obj_->at(*obj_key_token.parent_value->str_) = token.parent_value;
     }
 }
 
@@ -96,7 +93,7 @@ void ParseSingleChar(std::stack<JSONToken>& stack, const char*& current_ptr) {
         stack.push({new JSONValue(JSONValueType::Array), JSONTokenType::None});
         break;
     case ',':
-        ProcessSeparator(stack, current_token);
+        ProcessSeparator(stack);
         break;
     case '"':
         if (current_token.parent_value->type == JSONValueType::String) {
@@ -109,6 +106,7 @@ void ParseSingleChar(std::stack<JSONToken>& stack, const char*& current_ptr) {
             case JSONTokenType::ObjectKey:
                 assert(stack.top().parent_value->type == JSONValueType::Object);
                 stack.top().parent_value->obj_->insert({*current_token.parent_value->str_, new JSONValue(JSONValueType::None)});
+                stack.push(current_token);
                 break;
             case JSONTokenType::ObjectValue: {
                 JSONToken obj_key_token = stack.top();
@@ -130,7 +128,7 @@ void ParseSingleChar(std::stack<JSONToken>& stack, const char*& current_ptr) {
         }
         break;
     case ':': {
-        if (current_token.parent_value && current_token.parent_value->type == JSONValueType::Object) {
+        if (current_token.parent_value && current_token.type == JSONTokenType::ObjectKey) {
             stack.push({current_token.parent_value, JSONTokenType::Colon});
         } else {
             ProcessCharacterAsPartOfToken(current_token, ':');
