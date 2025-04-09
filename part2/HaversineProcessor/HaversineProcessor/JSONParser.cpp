@@ -40,8 +40,9 @@ void ProcessCharacterAsPartOfToken(const JSONToken& token, const char character)
     }
 }
 
-void ProcessSeparator(std::stack<JSONToken>& stack) {
-    auto token = stack.top();
+// add topmost value to object or array
+void AddValueToContainer(std::stack<JSONToken>& stack) {
+    auto value_token = stack.top();
     stack.pop();
     auto prev_token = stack.top();
     if (prev_token.type == JSONTokenType::Colon) {
@@ -49,7 +50,9 @@ void ProcessSeparator(std::stack<JSONToken>& stack) {
         auto obj_key_token = stack.top();
         stack.pop();
         auto obj_token = stack.top();
-        obj_token.parent_value->obj_->at(*obj_key_token.parent_value->str_) = token.parent_value;
+        obj_token.parent_value->obj_->at(*obj_key_token.parent_value->str_) = value_token.parent_value;
+    } else if (prev_token.parent_value->type == JSONValueType::Array) {
+        prev_token.parent_value->array_->push_back(value_token.parent_value);
     }
 }
 
@@ -81,6 +84,7 @@ void ParseNumber(std::stack<JSONToken>& stack, const char*& current_ptr) {
         number *= -1.0;
     }
     stack.push({new JSONValue(number), JSONTokenType::None});
+    AddValueToContainer(stack);
 }
 
 void ParseSingleChar(std::stack<JSONToken>& stack, const char*& current_ptr) {
@@ -89,11 +93,13 @@ void ParseSingleChar(std::stack<JSONToken>& stack, const char*& current_ptr) {
     case '{':
         stack.push({new JSONValue(JSONValueType::Object), JSONTokenType::None});
         break;
+    case '}':
+        AddValueToContainer(stack);
+        break;
     case '[':
         stack.push({new JSONValue(JSONValueType::Array), JSONTokenType::None});
         break;
     case ',':
-        ProcessSeparator(stack);
         break;
     case '"':
         if (current_token.parent_value->type == JSONValueType::String) {
@@ -144,7 +150,6 @@ void ParseSingleChar(std::stack<JSONToken>& stack, const char*& current_ptr) {
 JSONValue::~JSONValue() {
 }
 void JSONParser::Parse(const char* input_str) {
-    std::stack<JSONToken> token_stack;
     token_stack.push({nullptr, JSONTokenType::None});
     const char* current_ptr = input_str;
     while (*current_ptr != '\0') {

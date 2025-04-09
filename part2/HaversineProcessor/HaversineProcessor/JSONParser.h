@@ -29,4 +29,6 @@ struct JSONToken {
 class JSONParser {
 public:
     void Parse(const char* input_str);
+
+    std::stack<JSONToken> token_stack;
 };
