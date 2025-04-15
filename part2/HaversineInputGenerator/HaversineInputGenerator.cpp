@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
             clusters.push_back(cluster);
         }
     }
-    std::fstream file_stream("out.bin", std::ios::out | std::ios::binary | std::ios::trunc);
+    std::fstream bin_file_stream("out.bin", std::ios::out | std::ios::binary | std::ios::trunc);
     double sum = 0.0f;
     char* buffer = new char[coords_num * 110];
     char* cur_pointer = buffer;
@@ -112,7 +112,7 @@ int main(int argc, char* argv[]) {
         *cur_pointer++ = '}';
 
         double dist = GetHaversineDistance(components_data[0].coord, components_data[1].coord, components_data[2].coord, components_data[3].coord, EarthRadius);
-        file_stream.write((char*)&dist, sizeof(dist));
+        bin_file_stream.write((char*)&dist, sizeof(dist));
         sum += dist;
         if (i < coords_num - 1) {
             *cur_pointer++ = ',';
@@ -126,8 +126,10 @@ int main(int argc, char* argv[]) {
     auto file = fopen("point_pairs.json", "w");
     fputs(buffer, file);
     fclose(file);
-    file_stream.close();
-    std::cout << std::setprecision(15) << "Expected average: " << sum / coords_num << std::endl;
+    double average = sum / coords_num;
+    bin_file_stream.write((char*)&average, sizeof(average));
+    std::cout << std::setprecision(15) << "Expected average: " << average << std::endl;
+    bin_file_stream.close();
     delete[] buffer;
 
     return 0;
