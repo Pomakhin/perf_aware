@@ -156,9 +156,11 @@
     <ItemGroup>
         <ClCompile Include="HaversineProcessor.cpp"/>
         <ClCompile Include="JSONParser.cpp"/>
+        <ClCompile Include="TimeCounter.cpp"/>
     </ItemGroup>
     <ItemGroup>
         <ClInclude Include="JSONParser.h"/>
+        <ClInclude Include="TimeCounter.h"/>
     </ItemGroup>
     <ItemGroup>
         <Folder Include="..\..\..\computer_enhance\perfaware\part2\"/>

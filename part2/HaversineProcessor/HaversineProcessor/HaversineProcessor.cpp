@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include "TimeCounter.h"
 
 #pragma warning(disable : 4996)
 
@@ -43,6 +44,10 @@ int main(int argc, char* argv[]) {
         std::cout << "Usage: " << argv[0] << " [input_json_file] [input_control_bin_file]";
         return 1;
     }
+
+    std::cout << "OS time frequency: " << GetOSTimerFreq() << "; Read OS timer: " << ReadOSTimer() << "; ReadCPUTimer: " << ReadCPUTimer()
+              << "; Approximated CPU timer freq: " << ApproximateCPUTimerFreq() << std::endl;
+
     std::ifstream input(argv[2], std::ios::binary);
     input.seekg(0, std::ios::end);
     size_t filesize = input.tellg();
