@@ -48,6 +48,8 @@ int main(int argc, char* argv[]) {
     std::cout << "OS time frequency: " << GetOSTimerFreq() << "; Read OS timer: " << ReadOSTimer() << "; ReadCPUTimer: " << ReadCPUTimer()
               << "; Approximated CPU timer freq: " << ApproximateCPUTimerFreq() << std::endl;
 
+    double start_cpu_time = GetCPUTimeMs();
+
     std::ifstream input(argv[2], std::ios::binary);
     input.seekg(0, std::ios::end);
     size_t filesize = input.tellg();
@@ -77,8 +79,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    double after_read_cpu_time = GetCPUTimeMs();
+
     JSONParser parser;
     parser.Parse(buffer);
+    double after_parse_cpu_time = GetCPUTimeMs();
     JSONValue* root = parser.token_stack.top().parent_value;
     auto pairs_value = (*root->obj_)["pairs"];
     double average = 0;
@@ -90,10 +95,17 @@ int main(int argc, char* argv[]) {
         auto haversine_distance = GetHaversineDistance(x0, y0, x1, y1, EarthRadius) / static_cast<double>(pairs_value->array_->size());
         average += haversine_distance;
     }
+    double after_sum_cpu_time = GetCPUTimeMs();
 
-    std::cout << std::setprecision(15) << "Expected average: " << bin_file_buffer.back() << "; Calculated average: " << average;
+    std::cout << std::setprecision(15) << "Expected average: " << bin_file_buffer.back() << "; Calculated average: " << average << std::endl;
 
     fclose(json_file);
     delete[] buffer;
+
+    std::cout << std::setprecision(3) << "Total time: " << GetCPUTimeMs() - start_cpu_time << "ms";
+    std::cout << std::setprecision(3) << "  Read time: " << after_read_cpu_time - start_cpu_time << "ms";
+    std::cout << std::setprecision(3) << "  Parse time: " << after_parse_cpu_time - after_read_cpu_time << "ms";
+    std::cout << std::setprecision(3) << "  Sum time: " << after_sum_cpu_time - after_parse_cpu_time << "ms";
+
     return 0;
 }
